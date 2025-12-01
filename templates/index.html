@@ -4,87 +4,154 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-SEC Dashboard</title>
+    <title>AI-SEC Real-Time Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; background-color: #f4f7f6; }
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
-        h1 { color: #333; text-align: center; }
-        .alert-table { width: 100%; border-collapse: collapse; margin-top: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); background-color: #fff; }
-        .alert-table th, .alert-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
-        .alert-table th { background-color: #007bff; color: white; }
-        .alert-table tr:nth-child(even) { background-color: #f2f2f2; }
-        .alert-table tr:hover { background-color: #e9ecef; }
-        .no-alerts { text-align: center; color: #6c757d; margin-top: 2rem; }
-        .loading { text-align: center; margin-top: 2rem; }
+        :root { --bg-color: #0f0f23; --card-bg: #1a1a2e; --text-color: #eee; --primary-color: #00adb5; --danger-color: #ff5722; --border-color: #16213e; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 1rem; }
+        .container { max-width: 1400px; margin: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
+        .header { grid-column: 1 / -1; text-align: center; border-bottom: 2px solid var(--primary-color); padding-bottom: 1rem; }
+        .card { background-color: var(--card-bg); border-radius: 8px; padding: 1.5rem; box-shadow: 0 4px 8px rgba(0,0,0,0.2); border: 1px solid var(--border-color); }
+        .card h2 { margin-top: 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .stat-item { text-align: center; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; color: var(--danger-color); }
+        .live-feed { max-height: 300px; overflow-y: auto; background-color: #111; padding: 1rem; border-radius: 5px; }
+        .feed-item { padding: 0.5rem; border-bottom: 1px solid #333; }
+        .feed-item:last-child { border-bottom: none; }
+        .alert-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .alert-table th, .alert-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .alert-table th { background-color: var(--primary-color); color: var(--bg-color); }
+        .alert-table tr:hover { background-color: rgba(0, 173, 181, 0.1); }
+        .full-width { grid-column: 1 / -1; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🛡️ AI-SEC Anomaly Dashboard</h1>
-        <div id="alerts-container">
-            <p class="loading">Loading alerts...</p>
+        <div class="header">
+            <h1>🛡️ AI-SEC Real-Time Anomaly Dashboard</h1>
+        </div>
+
+        <div class="card">
+            <h2>Live Statistics (Last 24h)</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" id="total-alerts">...</div>
+                    <div>Total Alerts</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="top-user">...</div>
+                    <div>Top Alert User</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Alerts Timeline (Last 24h)</h2>
+            <canvas id="timeline-chart"></canvas>
+        </div>
+
+        <div class="card full-width">
+            <h2>Live Alert Feed</h2>
+            <div class="live-feed" id="live-feed">
+                <p>Waiting for live alerts...</p>
+            </div>
+        </div>
+
+        <div class="card full-width">
+            <h2>Recent Alert History</h2>
+            <div id="alert-table-container">
+                <p>Loading alert history...</p>
+            </div>
         </div>
     </div>
 
     <script>
-        async function fetchAlerts() {
-            try {
-                const response = await fetch('/api/alerts');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const alerts = await response.json();
-                displayAlerts(alerts);
-            } catch (error) {
-                console.error("Could not fetch alerts:", error);
-                document.getElementById('alerts-container').innerHTML = '<p class="no-alerts">Error loading alerts.</p>';
+        const socket = io();
+        const liveFeed = document.getElementById('live-feed');
+        const alertTableContainer = document.getElementById('alert-table-container');
+        let timelineChart;
+
+        // --- Chart.js Initialization ---
+        const ctx = document.getElementById('timeline-chart').getContext('2d');
+        timelineChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Number of Alerts',
+                    data: [],
+                    backgroundColor: 'rgba(255, 87, 34, 0.6)',
+                    borderColor: 'rgba(255, 87, 34, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#eee' }, grid: { color: '#444' } },
+                    x: { ticks: { color: '#eee' }, grid: { color: '#444' } }
+                },
+                plugins: { legend: { labels: { color: '#eee' } } }
             }
+        });
+
+        // --- API Fetching Functions ---
+        async function fetchStats() {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+            document.getElementById('total-alerts').innerText = stats.total_alerts_24h;
+            document.getElementById('top-user').innerText = stats.top_users.length > 0 ? stats.top_users[0].user : 'N/A';
         }
 
-        function displayAlerts(alerts) {
-            const container = document.getElementById('alerts-container');
+        async function fetchTimeline() {
+            const response = await fetch('/api/alerts/timeline');
+            const data = await response.json();
+            timelineChart.data.labels = data.map(d => new Date(d.hour).toLocaleTimeString());
+            timelineChart.data.datasets[0].data = data.map(d => d.count);
+            timelineChart.update();
+        }
+        
+        async function fetchAlertHistory() {
+            const response = await fetch('/api/alerts');
+            const alerts = await response.json();
             if (alerts.length === 0) {
-                container.innerHTML = '<p class="no-alerts">No recent anomalies detected. System looks clean!</p>';
+                alertTableContainer.innerHTML = '<p>No recent alerts.</p>';
                 return;
             }
-
             let tableHTML = `
                 <table class="alert-table">
-                    <thead>
-                        <tr>
-                            <th>Alert Time</th>
-                            <th>Event Time</th>
-                            <th>Hostname</th>
-                            <th>User</th>
-                            <th>Source IP</th>
-                            <th>Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                    <thead><tr>
+                        <th>Alert Time</th><th>Hostname</th><th>User</th><th>Source IP</th><th>Reason</th>
+                    </tr></thead><tbody>
             `;
-
             alerts.forEach(alert => {
-                tableHTML += `
-                    <tr>
-                        <td>${new Date(alert.alert_timestamp).toLocaleString()}</td>
-                        <td>${new Date(alert.event_timestamp).toLocaleString()}</td>
-                        <td>${alert.hostname}</td>
-                        <td>${alert.user}</td>
-                        <td>${alert.source_ip}</td>
-                        <td>${alert.reason}</td>
-                    </tr>
-                `;
+                tableHTML += `<tr><td>${new Date(alert.alert_timestamp).toLocaleString()}</td><td>${alert.hostname}</td><td>${alert.user}</td><td>${alert.source_ip}</td><td>${alert.reason}</td></tr>`;
             });
-
             tableHTML += '</tbody></table>';
-            container.innerHTML = tableHTML;
+            alertTableContainer.innerHTML = tableHTML;
         }
 
-        // Fetch alerts when the page loads
-        document.addEventListener('DOMContentLoaded', fetchAlerts);
+        // --- Real-time Updates ---
+        socket.on('new_alert', function(alert) {
+            console.log('New alert received:', alert);
+            const feedItem = document.createElement('div');
+            feedItem.className = 'feed-item';
+            feedItem.innerHTML = `<strong>${new Date(alert.alert_timestamp).toLocaleTimeString()}</strong> - Anomaly from <strong>${alert.user}</strong> at ${alert.source_ip}. Reason: ${alert.reason}.`;
+            liveFeed.prepend(feedItem); // Add to the top
+            if (liveFeed.children.length > 50) { liveFeed.removeChild(liveFeed.lastChild); } // Limit feed size
+            fetchAlertHistory(); // Refresh the history table
+            fetchStats(); // Refresh stats
+        });
 
-        // Refresh alerts every 30 seconds
-        setInterval(fetchAlerts, 30000);
+        // --- Initial Load and Periodic Refresh ---
+        window.addEventListener('load', () => {
+            fetchStats();
+            fetchTimeline();
+            fetchAlertHistory();
+            setInterval(fetchStats, 60000); // Refresh stats every minute
+            setInterval(fetchTimeline, 300000); // Refresh timeline every 5 mins
+        });
     </script>
 </body>
 </html>

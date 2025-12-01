@@ -6,12 +6,14 @@ from datetime import datetime, timedelta
 from clickhouse_driver import Client
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+import requests
 
 # --- Configuration ---
 CLICKHOUSE_HOST = 'localhost'
-DETECTION_INTERVAL_SECONDS = 10
-TRAINING_DATA_SIZE = 100
-MODEL_RETRAIN_INTERVAL_HOURS = 6
+DETECTION_INTERVAL_SECONDS = 2
+TRAINING_DATA_SIZE = 20
+MODEL_RETRAIN_LOG_COUNT = 50 # Retrain after this many new logs are processed
+FLASK_NOTIFY_URL = "http://127.0.0.1:5000/notify_new_alert"
 
 # --- State ---
 model = None
@@ -28,14 +30,16 @@ except Exception as e:
     exit()
 
 def get_training_data():
-    """Fetches a large batch of historical data for training."""
+    """Fetches a large batch of recent historical data for training."""
     print("[AI_ENGINE] Fetching training data...")
     # Use an f-string to insert the limit directly into the query string.
-    query = f"SELECT timestamp, hostname, user, source_ip FROM logs ORDER BY timestamp ASC LIMIT {TRAINING_DATA_SIZE}"
+    # We order by DESC to get the most recent logs for more relevant training.
+    query = f"SELECT timestamp, hostname, user, source_ip FROM logs ORDER BY timestamp DESC LIMIT {TRAINING_DATA_SIZE}"
     logs = client.execute(query)
     return logs
 
 def get_new_logs(last_processed_timestamp):
+    
     """Fetches logs that have arrived since the last check."""
     # --- FIX IS HERE ---
     # Convert the datetime object to a string and insert it using an f-string.
@@ -87,7 +91,7 @@ def train_model():
     return True
 
 def detect_and_alert(new_logs):
-    """Detects anomalies in new logs and writes them to the alerts table."""
+    """Detects anomalies in new logs, writes them to the DB, and notifies the Flask app."""
     if not model or not scaler:
         print("[AI_ENGINE] Model not available for detection.")
         return
@@ -99,7 +103,6 @@ def detect_and_alert(new_logs):
     feature_matrix = extract_features(new_logs)
     scaled_features = scaler.transform(feature_matrix)
     
-    # The model returns 1 for inliers (normal) and -1 for outliers (anomalies)
     predictions = model.predict(scaled_features)
     anomaly_scores = model.decision_function(scaled_features)
 
@@ -108,17 +111,40 @@ def detect_and_alert(new_logs):
         if predictions[i] == -1:
             timestamp, hostname, user, source_ip = log
             reason = "Anomalous login time or user type."
-            alert = (
-                datetime.utcnow(),  # alert_timestamp
-                timestamp,         # event_timestamp
+            
+            # Format the alert data for both the database and the notification
+            alert_details = {
+                "user": user, 
+                "source_ip": source_ip
+            }
+            alert_for_db = (
+                datetime.utcnow(),
+                timestamp,
                 hostname,
                 user,
                 source_ip,
                 float(anomaly_scores[i]),
                 reason,
-                json.dumps({"user": user, "source_ip": source_ip}) # event_details
+                json.dumps(alert_details)
             )
-            alerts_to_insert.append(alert)
+            alerts_to_insert.append(alert_for_db)
+
+            # --- NEW: Notify the Flask app in real-time ---
+            try:
+                alert_payload = {
+                    "alert_timestamp": str(datetime.utcnow()),
+                    "event_timestamp": str(timestamp),
+                    "hostname": hostname,
+                    "user": user,
+                    "source_ip": source_ip,
+                    "anomaly_score": float(anomaly_scores[i]),
+                    "reason": reason,
+                    "event_details": json.dumps(alert_details)
+                }
+                requests.post(FLASK_NOTIFY_URL, json=alert_payload, timeout=2)
+            except requests.exceptions.RequestException as e:
+                print(f"[AI_ENGINE] Could not notify Flask app: {e}")
+
 
     if alerts_to_insert:
         print(f"🚨 Found {len(alerts_to_insert)} anomalies! Writing to database.")
@@ -130,29 +156,33 @@ def detect_and_alert(new_logs):
 
 def main_loop():
     """The main loop for the AI engine."""
-    last_processed_timestamp = datetime(1970, 1, 1) # Start from the beginning
-    
-    # Initial model training
-    if not train_model():
-        print("[AI_ENGINE] Initial model training failed. Will retry.")
-        # We don't exit, we'll just try again on the next loop
+    last_processed_timestamp = datetime(1970, 1, 1)
+    logs_processed_since_retrain = 0
 
     while True:
-        print(f"[AI_ENGINE] Sleeping for {DETECTION_INTERVAL_SECONDS} seconds...")
         time.sleep(DETECTION_INTERVAL_SECONDS)
-        
-        # Check if it's time to retrain the model
-        if last_model_train_time and (datetime.utcnow() - last_model_train_time) > timedelta(hours=MODEL_RETRAIN_INTERVAL_HOURS):
-            print("[AI_ENGINE] Model retrain interval reached. Retraining...")
-            train_model()
 
-        # Fetch and process new logs
+        if model is None:
+            print("[AI_ENGINE] Model is not trained. Attempting to train...")
+            train_model()
+            continue
+
+        # Check if it's time to retrain based on log count
+        if logs_processed_since_retrain >= MODEL_RETRAIN_LOG_COUNT:
+            print(f"[AI_ENGINE] Processed {logs_processed_since_retrain} logs since last train. Retraining model...")
+            train_model()
+            # Reset counter after any training attempt to wait for more new logs.
+            logs_processed_since_retrain = 0
+            # Continue to next loop to not detect on the same logs that were just used for training
+            continue
+
         new_logs = get_new_logs(last_processed_timestamp)
-        
+
+        print(f"[AI_ENGINE] Retrieved {len(new_logs)} new logs since {last_processed_timestamp.isoformat()}.")
         if new_logs:
             detect_and_alert(new_logs)
-            # Update the timestamp to the latest one we've seen
             last_processed_timestamp = new_logs[-1][0]
+            logs_processed_since_retrain += len(new_logs)
         else:
             print("[AI_ENGINE] No new logs to process.")
 

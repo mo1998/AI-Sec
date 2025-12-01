@@ -99,7 +99,7 @@ def main():
     for name, command in COMMANDS.items():
         # We add a delay to give the previous service time to start up
         # (e.g., Flask needs to bind to the port before the agent tries to connect)
-        time.sleep(3) 
+        time.sleep(0.1) 
         thread = threading.Thread(target=run_command, args=(name, command))
         threads.append(thread)
         thread.start()

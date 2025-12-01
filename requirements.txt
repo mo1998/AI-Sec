@@ -1,4 +1,6 @@
 flask
+flask-socketio
+eventlet
 clickhouse-driver
 scikit-learn
 numpy
