@@ -1,0 +1,5 @@
+flask
+clickhouse-driver
+scikit-learn
+numpy
+requests

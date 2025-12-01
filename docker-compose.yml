@@ -1,0 +1,13 @@
+services:
+  clickhouse:
+    image: yandex/clickhouse-server:latest
+    container_name: ai-sec-clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native TCP interface for the Python driver
+    volumes:
+      - ./data:/var/lib/clickhouse
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Runs on first start
+    environment:
+      # This allows us to create users/roles without complex XML configs
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
