@@ -40,7 +40,7 @@
             grid-template-columns: repeat(12, 1fr);
             grid-template-rows: auto auto auto;
             gap: 20px;
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
             padding-bottom: 20px;
         }
@@ -80,7 +80,7 @@
         }
 
         .summary-card {
-            grid-column: span 3;
+            grid-column: span 2;
             text-align: center;
             position: relative;
             overflow: hidden;
@@ -121,6 +121,12 @@
             background-clip: text;
             line-height: 1.2;
         }
+		.summary-card .unit {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--font-color-muted);
+            margin-left: 4px;
+        }
 
         .summary-card:nth-child(3) .value {
             background: linear-gradient(135deg, var(--accent-success) 0%, #14b8a6 100%);
@@ -140,9 +146,14 @@
             -webkit-text-fill-color: transparent;
         }
 
-        .chart-card {
+        .large-chart-card {
             grid-column: 1 / -1;
             height: 450px;
+        }
+        
+        .chart-card {
+            grid-column: span 6;
+            height: 400px;
         }
 
         .chart-card h3 {
@@ -151,7 +162,6 @@
             font-weight: 600;
             color: var(--font-color);
         }
-
 
         .status-badge {
             display: inline-block;
@@ -168,12 +178,21 @@
             color: var(--accent-success);
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 1280px) {
             .summary-card {
-                grid-column: span 6;
+                grid-column: span 4;
             }
         }
 
+        @media (max-width: 768px) {
+            .summary-card {
+                grid-column: span 6;
+            }
+            .chart-card {
+                grid-column: span 12;
+            }
+        }
+        
         @media (max-width: 640px) {
             .summary-card {
                 grid-column: span 12;
@@ -203,20 +222,39 @@
         </div>
 
         <div class="card summary-card">
-            <h3>System Status</h3>
-            <p class="value" id="system-status">Offline</p>
+            <h3>Threats Mitigated</h3>
+            <p class="value" id="threats-mitigated">0</p>
         </div>
 
         <div class="card summary-card">
             <h3>Active Threats</h3>
             <p class="value" id="active-threats">0</p>
         </div>
+        
+        <div class="card summary-card">
+            <h3>Avg. Latency</h3>
+            <p class="value" id="avg-latency">0<span class="unit">ms</span></p>
+        </div>
 
-        <div class="card chart-card">
+        <div class="card summary-card">
+            <h3>System Status</h3>
+            <p class="value" id="system-status">Offline</p>
+        </div>
+
+        <div class="card large-chart-card">
             <h3>Event Activity Over Time</h3>
             <canvas id="events-chart"></canvas>
         </div>
 
+        <div class="card chart-card">
+            <h3>Threats by Severity</h3>
+            <canvas id="severity-chart"></canvas>
+        </div>
+
+        <div class="card chart-card">
+            <h3>Event Type Distribution</h3>
+            <canvas id="eventType-chart"></canvas>
+        </div>
 
     </div>
 <script>
@@ -228,17 +266,53 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Elements ---
     const totalEventsEl = document.getElementById('total-events');
     const anomaliesDetectedEl = document.getElementById('anomalies-detected');
+    const threatsMitigatedEl = document.getElementById('threats-mitigated');
     const systemStatusEl = document.getElementById('system-status');
     const activeThreatsEl = document.getElementById('active-threats');
+    const avgLatencyEl = document.getElementById('avg-latency');
 
     // --- State ---
     let totalEvents = 0;
     let anomaliesDetected = 0;
     let activeThreats = 0;
+    let threatsMitigated = 0;
+    let totalLatency = 0;
+    let eventCountForLatency = 0;
 
-    // --- Chart.js Initialization ---
-    const ctx = document.getElementById('events-chart').getContext('2d');
-    const eventsChart = new Chart(ctx, {
+    // --- Chart Helpers ---
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    color: '#f1f5f9',
+                    font: { size: 12, weight: '500' },
+                    padding: 20,
+                    usePointStyle: true,
+                    pointStyle: 'circle'
+                }
+            },
+            tooltip: {
+                backgroundColor: '#1e293b',
+                titleColor: '#f1f5f9',
+                bodyColor: '#94a3b8',
+                borderColor: '#334155',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: true,
+            }
+        },
+        animation: {
+            duration: 500,
+            easing: 'easeInOutQuart'
+        }
+    };
+    
+    // --- Line Chart Initialization ---
+    const eventsChartCtx = document.getElementById('events-chart').getContext('2d');
+    const eventsChart = new Chart(eventsChartCtx, {
         type: 'line',
         data: {
             labels: [],
@@ -257,128 +331,116 @@ document.addEventListener('DOMContentLoaded', () => {
                 pointBorderWidth: 2,
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
+        options: { ...chartOptions,
             scales: {
                 x: {
-                    title: {
-                        display: true,
-                        text: 'Time',
-                        color: '#f1f5f9',
-                        font: {
-                            size: 14,
-                            weight: '600'
-                        },
-                        padding: { top: 10 }
-                    },
-                    grid: {
-                        color: 'rgba(148, 163, 184, 0.1)',
-                        drawBorder: false
-                    },
-                    ticks: {
-                        color: '#94a3b8',
-                        font: {
-                            size: 11
-                        },
-                        maxRotation: 45,
-                        minRotation: 45
-                    }
+                    title: { display: true, text: 'Time', color: '#f1f5f9', font: { size: 14, weight: '600' }, padding: { top: 10 } },
+                    grid: { color: 'rgba(148, 163, 184, 0.1)', drawBorder: false },
+                    ticks: { color: '#94a3b8', font: { size: 11 }, maxRotation: 45, minRotation: 45 }
                 },
                 y: {
-                    title: {
-                        display: true,
-                        text: 'Number of Events',
-                        color: '#f1f5f9',
-                        font: {
-                            size: 14,
-                            weight: '600'
-                        },
-                        padding: { bottom: 10 }
-                    },
+                    title: { display: true, text: 'Number of Events', color: '#f1f5f9', font: { size: 14, weight: '600' }, padding: { bottom: 10 } },
                     beginAtZero: true,
-                    grid: {
-                        color: 'rgba(148, 163, 184, 0.1)',
-                        drawBorder: false
-                    },
-                    ticks: {
-                        color: '#94a3b8',
-                        font: {
-                            size: 11
-                        },
-                        stepSize: 1
-                    }
+                    grid: { color: 'rgba(148, 163, 184, 0.1)', drawBorder: false },
+                    ticks: { color: '#94a3b8', font: { size: 11 }, stepSize: 1 }
                 }
             },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    align: 'end',
-                    labels: {
-                        color: '#f1f5f9',
-                        font: {
-                            size: 12,
-                            weight: '600'
-                        },
-                        padding: 15,
-                        usePointStyle: true,
-                        pointStyle: 'circle'
-                    }
-                },
-                tooltip: {
-                    backgroundColor: '#1e293b',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#94a3b8',
-                    borderColor: '#3b82f6',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: true,
+            plugins: { ...chartOptions.plugins,
+                legend: { ...chartOptions.plugins.legend, position: 'top', align: 'end' },
+                tooltip: { ...chartOptions.plugins.tooltip,
                     callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': ' + context.parsed.y + ' events';
-                        }
+                        label: (context) => `${context.dataset.label}: ${context.parsed.y} events`
                     }
                 }
             },
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            animation: {
-                duration: 750,
-                easing: 'easeInOutQuart'
-            },
-            transitions: {
-                active: {
-                    animation: {
-                        duration: 400
-                    }
-                }
-            }
+            interaction: { intersect: false, mode: 'index' }
         }
     });
 
+    // --- Donut Chart (Severity) Initialization ---
+    const severityChartCtx = document.getElementById('severity-chart').getContext('2d');
+    const severityChart = new Chart(severityChartCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Critical', 'High', 'Medium', 'Low'],
+            datasets: [{
+                label: 'Threats by Severity',
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#3b82f6'],
+                borderColor: '#1e293b',
+                borderWidth: 4,
+                hoverOffset: 8
+            }]
+        },
+        options: { ...chartOptions, cutout: '70%' }
+    });
+
+    // --- Pie Chart (Event Types) Initialization ---
+    const eventTypeChartCtx = document.getElementById('eventType-chart').getContext('2d');
+    const eventTypeChart = new Chart(eventTypeChartCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Network', 'Endpoint', 'Auth', 'API'],
+            datasets: [{
+                label: 'Event Types',
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'],
+                borderColor: '#1e293b',
+                borderWidth: 4,
+                hoverOffset: 8
+            }]
+        },
+        options: chartOptions
+    });
+
+
     // --- Data Simulation ---
     function simulateData() {
-        // Update summary cards
         const newEvents = Math.floor(Math.random() * 10) + 1;
         totalEvents += newEvents;
         
+        // Simulate latency
+        const currentLatency = Math.floor(Math.random() * 150) + 50; // 50-200ms
+        totalLatency += currentLatency;
+        eventCountForLatency++;
+
+        // Simulate anomalies and threats
         if (Math.random() > 0.8) {
             anomaliesDetected += 1;
             activeThreats += 1;
+            // Simulate threat mitigation
+            if (Math.random() > 0.5) {
+                threatsMitigated += 1;
+                if (activeThreats > 0) activeThreats--;
+            }
+
+            // Update severity chart
+            const severityIndex = Math.floor(Math.random() * 4);
+            severityChart.data.datasets[0].data[severityIndex]++;
+            severityChart.update('none'); // 'none' for no animation on update
         }
         if (Math.random() > 0.98 && activeThreats > 0) {
             activeThreats -= 1;
         }
 
+        // Update event type chart
+        for (let i = 0; i < newEvents; i++) {
+            const typeIndex = Math.floor(Math.random() * 4);
+            eventTypeChart.data.datasets[0].data[typeIndex]++;
+        }
+        eventTypeChart.update('none');
+
+        // Update summary cards
         totalEventsEl.textContent = totalEvents.toLocaleString();
         anomaliesDetectedEl.textContent = anomaliesDetected.toLocaleString();
+        threatsMitigatedEl.textContent = threatsMitigated.toLocaleString();
         activeThreatsEl.textContent = activeThreats.toLocaleString();
+        const avgLatency = eventCountForLatency > 0 ? (totalLatency / eventCountForLatency).toFixed(0) : 0;
+        avgLatencyEl.innerHTML = `${avgLatency}<span class="unit">ms</span>`;
         systemStatusEl.innerHTML = '<span class="status-badge status-online">Online</span>';
 
-        // Update chart
+
+        // Update line chart
         const now = new Date();
         const timeLabel = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
@@ -389,14 +451,14 @@ document.addEventListener('DOMContentLoaded', () => {
             eventsChart.data.labels.shift();
             eventsChart.data.datasets[0].data.shift();
         }
-        eventsChart.update(); // Smooth animated update
+        eventsChart.update();
     }
 
     // --- Initial Data Load & Interval ---
-    simulateData(); // Initial load
+    for (let i = 0; i < MAX_DATA_POINTS; i++) {
+        simulateData(); // Pre-fill with some data
+    }
     setInterval(simulateData, UPDATE_INTERVAL);
 });
-</script>
-
-</body>
+</script></body>
 </html>
