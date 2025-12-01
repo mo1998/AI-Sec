@@ -76,7 +76,7 @@ def main():
             simulated_time += timedelta(minutes=time_increment_minutes)
 
             # Real-time sleep to control how fast we send events to the server
-            time.sleep(random.randint(1, 2))
+            time.sleep(0.5)
 
         except requests.exceptions.ConnectionError:
             print(f"[AGENT] Connection refused. Is the Flask app running at {INGESTION_URL}? Retrying in 5s...")

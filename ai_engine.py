@@ -10,8 +10,8 @@ import requests
 
 # --- Configuration ---
 CLICKHOUSE_HOST = 'localhost'
-DETECTION_INTERVAL_SECONDS = 2
-TRAINING_DATA_SIZE = 20
+DETECTION_INTERVAL_SECONDS = 1
+TRAINING_DATA_SIZE = 50
 MODEL_RETRAIN_LOG_COUNT = 50 # Retrain after this many new logs are processed
 FLASK_NOTIFY_URL = "http://127.0.0.1:5000/notify_new_alert"
 

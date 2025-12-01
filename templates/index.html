@@ -1,157 +1,402 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-SEC Real-Time Dashboard</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <title>AI-Sec Real-Time Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --bg-color: #0f0f23; --card-bg: #1a1a2e; --text-color: #eee; --primary-color: #00adb5; --danger-color: #ff5722; --border-color: #16213e; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 1rem; }
-        .container { max-width: 1400px; margin: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
-        .header { grid-column: 1 / -1; text-align: center; border-bottom: 2px solid var(--primary-color); padding-bottom: 1rem; }
-        .card { background-color: var(--card-bg); border-radius: 8px; padding: 1.5rem; box-shadow: 0 4px 8px rgba(0,0,0,0.2); border: 1px solid var(--border-color); }
-        .card h2 { margin-top: 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; }
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        .stat-item { text-align: center; }
-        .stat-number { font-size: 2.5rem; font-weight: bold; color: var(--danger-color); }
-        .live-feed { max-height: 300px; overflow-y: auto; background-color: #111; padding: 1rem; border-radius: 5px; }
-        .feed-item { padding: 0.5rem; border-bottom: 1px solid #333; }
-        .feed-item:last-child { border-bottom: none; }
-        .alert-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        .alert-table th, .alert-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color); }
-        .alert-table th { background-color: var(--primary-color); color: var(--bg-color); }
-        .alert-table tr:hover { background-color: rgba(0, 173, 181, 0.1); }
-        .full-width { grid-column: 1 / -1; }
+        :root {
+            --bg-color: #0f172a;
+            --primary-color: #1e293b;
+            --secondary-color: #334155;
+            --accent-primary: #3b82f6;
+            --accent-success: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-danger: #ef4444;
+            --font-color: #f1f5f9;
+            --font-color-muted: #94a3b8;
+            --border-color: #334155;
+            --card-hover: #475569;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--font-color);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: auto auto auto;
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding-bottom: 20px;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .card {
+            background: var(--primary-color);
+            padding: 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(59, 130, 246, 0.2);
+            border-color: var(--accent-primary);
+        }
+
+        .summary-card {
+            grid-column: span 3;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .summary-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-success));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .summary-card:hover::before {
+            opacity: 1;
+        }
+
+        .summary-card h3 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--font-color-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-card .value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-success) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+        }
+
+        .summary-card:nth-child(3) .value {
+            background: linear-gradient(135deg, var(--accent-success) 0%, #14b8a6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .summary-card:nth-child(4) .value {
+            background: linear-gradient(135deg, var(--accent-warning) 0%, var(--accent-danger) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .summary-card:nth-child(5) .value {
+            background: linear-gradient(135deg, var(--accent-danger) 0%, #dc2626 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chart-card {
+            grid-column: 1 / -1;
+            height: 450px;
+        }
+
+        .chart-card h3 {
+            margin-bottom: 20px;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--font-color);
+        }
+
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-online {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-success);
+        }
+
+        @media (max-width: 1024px) {
+            .summary-card {
+                grid-column: span 6;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .summary-card {
+                grid-column: span 12;
+            }
+            
+            .header h1 {
+                font-size: 1.75rem;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🛡️ AI-SEC Real-Time Anomaly Dashboard</h1>
+
+    <div class="dashboard">
+        <header class="header">
+            <h1>AI-Sec Real-Time Dashboard</h1>
+        </header>
+
+        <div class="card summary-card">
+            <h3>Total Events</h3>
+            <p class="value" id="total-events">0</p>
         </div>
 
-        <div class="card">
-            <h2>Live Statistics (Last 24h)</h2>
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-number" id="total-alerts">...</div>
-                    <div>Total Alerts</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-number" id="top-user">...</div>
-                    <div>Top Alert User</div>
-                </div>
-            </div>
+        <div class="card summary-card">
+            <h3>Anomalies Detected</h3>
+            <p class="value" id="anomalies-detected">0</p>
         </div>
 
-        <div class="card">
-            <h2>Alerts Timeline (Last 24h)</h2>
-            <canvas id="timeline-chart"></canvas>
+        <div class="card summary-card">
+            <h3>System Status</h3>
+            <p class="value" id="system-status">Offline</p>
         </div>
 
-        <div class="card full-width">
-            <h2>Live Alert Feed</h2>
-            <div class="live-feed" id="live-feed">
-                <p>Waiting for live alerts...</p>
-            </div>
+        <div class="card summary-card">
+            <h3>Active Threats</h3>
+            <p class="value" id="active-threats">0</p>
         </div>
 
-        <div class="card full-width">
-            <h2>Recent Alert History</h2>
-            <div id="alert-table-container">
-                <p>Loading alert history...</p>
-            </div>
+        <div class="card chart-card">
+            <h3>Event Activity Over Time</h3>
+            <canvas id="events-chart"></canvas>
         </div>
+
+
     </div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Configuration ---
+    const MAX_DATA_POINTS = 30;
+    const UPDATE_INTERVAL = 2000; // in milliseconds
 
-    <script>
-        const socket = io();
-        const liveFeed = document.getElementById('live-feed');
-        const alertTableContainer = document.getElementById('alert-table-container');
-        let timelineChart;
+    // --- DOM Elements ---
+    const totalEventsEl = document.getElementById('total-events');
+    const anomaliesDetectedEl = document.getElementById('anomalies-detected');
+    const systemStatusEl = document.getElementById('system-status');
+    const activeThreatsEl = document.getElementById('active-threats');
 
-        // --- Chart.js Initialization ---
-        const ctx = document.getElementById('timeline-chart').getContext('2d');
-        timelineChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Number of Alerts',
-                    data: [],
-                    backgroundColor: 'rgba(255, 87, 34, 0.6)',
-                    borderColor: 'rgba(255, 87, 34, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                scales: {
-                    y: { beginAtZero: true, ticks: { color: '#eee' }, grid: { color: '#444' } },
-                    x: { ticks: { color: '#eee' }, grid: { color: '#444' } }
+    // --- State ---
+    let totalEvents = 0;
+    let anomaliesDetected = 0;
+    let activeThreats = 0;
+
+    // --- Chart.js Initialization ---
+    const ctx = document.getElementById('events-chart').getContext('2d');
+    const eventsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Events per Second',
+                data: [],
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderWidth: 3,
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#3b82f6',
+                pointBorderColor: '#1e293b',
+                pointBorderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time',
+                        color: '#f1f5f9',
+                        font: {
+                            size: 14,
+                            weight: '600'
+                        },
+                        padding: { top: 10 }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#94a3b8',
+                        font: {
+                            size: 11
+                        },
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
                 },
-                plugins: { legend: { labels: { color: '#eee' } } }
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Number of Events',
+                        color: '#f1f5f9',
+                        font: {
+                            size: 14,
+                            weight: '600'
+                        },
+                        padding: { bottom: 10 }
+                    },
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#94a3b8',
+                        font: {
+                            size: 11
+                        },
+                        stepSize: 1
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        color: '#f1f5f9',
+                        font: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#94a3b8',
+                    borderColor: '#3b82f6',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y + ' events';
+                        }
+                    }
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            animation: {
+                duration: 750,
+                easing: 'easeInOutQuart'
+            },
+            transitions: {
+                active: {
+                    animation: {
+                        duration: 400
+                    }
+                }
             }
-        });
-
-        // --- API Fetching Functions ---
-        async function fetchStats() {
-            const response = await fetch('/api/stats');
-            const stats = await response.json();
-            document.getElementById('total-alerts').innerText = stats.total_alerts_24h;
-            document.getElementById('top-user').innerText = stats.top_users.length > 0 ? stats.top_users[0].user : 'N/A';
         }
+    });
 
-        async function fetchTimeline() {
-            const response = await fetch('/api/alerts/timeline');
-            const data = await response.json();
-            timelineChart.data.labels = data.map(d => new Date(d.hour).toLocaleTimeString());
-            timelineChart.data.datasets[0].data = data.map(d => d.count);
-            timelineChart.update();
-        }
+    // --- Data Simulation ---
+    function simulateData() {
+        // Update summary cards
+        const newEvents = Math.floor(Math.random() * 10) + 1;
+        totalEvents += newEvents;
         
-        async function fetchAlertHistory() {
-            const response = await fetch('/api/alerts');
-            const alerts = await response.json();
-            if (alerts.length === 0) {
-                alertTableContainer.innerHTML = '<p>No recent alerts.</p>';
-                return;
-            }
-            let tableHTML = `
-                <table class="alert-table">
-                    <thead><tr>
-                        <th>Alert Time</th><th>Hostname</th><th>User</th><th>Source IP</th><th>Reason</th>
-                    </tr></thead><tbody>
-            `;
-            alerts.forEach(alert => {
-                tableHTML += `<tr><td>${new Date(alert.alert_timestamp).toLocaleString()}</td><td>${alert.hostname}</td><td>${alert.user}</td><td>${alert.source_ip}</td><td>${alert.reason}</td></tr>`;
-            });
-            tableHTML += '</tbody></table>';
-            alertTableContainer.innerHTML = tableHTML;
+        if (Math.random() > 0.8) {
+            anomaliesDetected += 1;
+            activeThreats += 1;
+        }
+        if (Math.random() > 0.98 && activeThreats > 0) {
+            activeThreats -= 1;
         }
 
-        // --- Real-time Updates ---
-        socket.on('new_alert', function(alert) {
-            console.log('New alert received:', alert);
-            const feedItem = document.createElement('div');
-            feedItem.className = 'feed-item';
-            feedItem.innerHTML = `<strong>${new Date(alert.alert_timestamp).toLocaleTimeString()}</strong> - Anomaly from <strong>${alert.user}</strong> at ${alert.source_ip}. Reason: ${alert.reason}.`;
-            liveFeed.prepend(feedItem); // Add to the top
-            if (liveFeed.children.length > 50) { liveFeed.removeChild(liveFeed.lastChild); } // Limit feed size
-            fetchAlertHistory(); // Refresh the history table
-            fetchStats(); // Refresh stats
-        });
+        totalEventsEl.textContent = totalEvents.toLocaleString();
+        anomaliesDetectedEl.textContent = anomaliesDetected.toLocaleString();
+        activeThreatsEl.textContent = activeThreats.toLocaleString();
+        systemStatusEl.innerHTML = '<span class="status-badge status-online">Online</span>';
 
-        // --- Initial Load and Periodic Refresh ---
-        window.addEventListener('load', () => {
-            fetchStats();
-            fetchTimeline();
-            fetchAlertHistory();
-            setInterval(fetchStats, 60000); // Refresh stats every minute
-            setInterval(fetchTimeline, 300000); // Refresh timeline every 5 mins
-        });
-    </script>
+        // Update chart
+        const now = new Date();
+        const timeLabel = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
+        eventsChart.data.labels.push(timeLabel);
+        eventsChart.data.datasets[0].data.push(newEvents);
+
+        if (eventsChart.data.labels.length > MAX_DATA_POINTS) {
+            eventsChart.data.labels.shift();
+            eventsChart.data.datasets[0].data.shift();
+        }
+        eventsChart.update(); // Smooth animated update
+    }
+
+    // --- Initial Data Load & Interval ---
+    simulateData(); // Initial load
+    setInterval(simulateData, UPDATE_INTERVAL);
+});
+</script>
+
 </body>
 </html>
